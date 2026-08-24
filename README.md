@@ -118,14 +118,14 @@ src/meshlab.mojo -> dist/libmojo-meshlab.so -> ctypes -> mojomeshlab
 Run benchmarks only through `pixi run bench`; the task takes a machine-wide
 file lock. These are best-of-three or best-of-five wall times measured on an
 Intel Xeon E5-2697 v4 at 2.30 GHz, Linux 6.8.0-136-generic. They are the actual
-output from this repository on 2026-07-29.
+output from this repository on 2026-08-24.
 
 | case | mojo-meshlab | pymeshlab | pymeshlab / Mojo | result |
 |---|---:|---:|---:|---|
-| face aspect ratio, 403k triangles | 12.62 ms | 26.11 ms | 2.07x | Mojo faster |
-| geometric measures, 403k triangles | 157.38 ms | 1008.35 ms | 6.41x | Mojo faster |
-| scalar color ramp, 1m vertices | 10.30 ms | 80.56 ms | 7.82x | Mojo faster |
-| midpoint subdivision, 64k triangles | 40.02 ms | 206.45 ms | 5.16x | Mojo faster |
+| face aspect ratio, 403k triangles | 8.86 ms | 18.34 ms | 2.07x | Mojo faster |
+| geometric measures, 403k triangles | 102.22 ms | 725.05 ms | 7.09x | Mojo faster |
+| scalar color ramp, 1m vertices | 5.04 ms | 56.16 ms | 11.13x | Mojo faster |
+| midpoint subdivision, 64k triangles | 24.93 ms | 213.18 ms | 8.55x | Mojo faster |
 
 No GPU path is included. The geometric face pass performs fewer than two
 floating-point operations per byte of indexed face and vertex data, while the
