@@ -1,7 +1,5 @@
 """MeshLab/VCGLib filter kernels exposed through a flat C ABI."""
 
-from std.algorithm import parallelize
-from std.gpu.host import DeviceContext
 from std.math import abs, acos, cos, floor, sin, sqrt
 from std.sys import simd_width_of
 
@@ -155,12 +153,8 @@ def geometric_measures(
                     fp(scratch_address) + 5 * worker,
                 )
 
-            try:
-                var cpu_context = DeviceContext(api="cpu")
-                parallelize[work](worker_count, cpu_context)
-            except:
-                geometric_face_range(v, f, 0, face_count, scratch)
-                active_workers = 1
+            for worker in range(active_workers):
+                work(worker)
         else:
             geometric_face_range(v, f, 0, face_count, scratch)
         for worker in range(active_workers):
