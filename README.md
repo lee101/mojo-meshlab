@@ -13,6 +13,45 @@ being matched. This repository is MIT licensed.
 
 ## Coverage
 
+### GPU status: CPU only (memory-bound)
+
+No GPU path is shipped. Every kernel in this port is below the ~2 flop/byte
+threshold, where host→device transfer and launch latency cost more than the
+device can win back. `bench/analysis.md` was never written in this repository,
+so the intensity table below was derived directly from the expressions in
+`src/meshlab.mojo` on the benchmark mesh (202,500 vertices / 403,202 faces from
+the `grid(450)` generator in `bench/bench.py`):
+
+| kernel | flop/elem | bytes/elem (ideal) | flop/byte | verdict |
+|---|---:|---:|---:|---|
+| aspect ratio metric=1 (`face_metrics`) | 52 | 60.1 | 0.87 | CPU only: memory-bound |
+| surface area (`geometric_measures`) | 25 | 60.1 | 0.42 | CPU only: memory-bound |
+| face normal area (`mark_null_faces`) | 21 | 60.1 | 0.35 | CPU only: memory-bound |
+| `select_long_edges` | 33 | 60.1 | 0.55 | CPU only: memory-bound |
+| color ramp (`color_ramp`) | 8 | 40.0 | 0.20 | CPU only: memory-bound |
+| `select_scalar` | 2 | 16.0 | 0.13 | CPU only: memory-bound |
+| `laplacian_step` (1 step) | 45 | 200.0 | 0.23 | CPU only: memory-bound |
+| `sample_barycentric` (montecarlo) | 12 | 120.0 | 0.10 | CPU only: memory-bound |
+
+The `bytes/elem` column is the *best case for the GPU*: each face index and
+vertex row charged once for the whole mesh (perfect L2 reuse), each output
+written once. With the pessimistic no-reuse accounting actually relevant to a
+device kernel the intensities are lower still (0.08–0.46 flop/byte). Even the
+upper bound is 2.3x below the 2 flop/byte gate for the best kernel, so the
+decision does not depend on the traffic model.
+
+The remaining kernels were rejected on structure, not intensity: the duplicate
+vertex and duplicate face removers are quadratic in the number of elements, and
+`geodesic` is a sequential priority-queue Dijkstra whose inner loop is
+latency-bound on the CPU — neither maps to one launch over the whole input.
+
+The other gate on this phase is the shared GPU: at check time
+`nvidia-smi --query-gpu=memory.free` reported 4559 MiB free on an RTX 5090 with
+27.5 GiB already allocated by other process. That clears the 4000 MiB floor, so
+the decision above rests on the intensity gate alone. No GPU tests exist
+because no GPU path is shipped; `pixi run test` runs the same 40 CPU tests on
+any host and skips nothing.
+
 The current release covers:
 
 - `filter_clean`: exact-position duplicate vertices, duplicate faces regardless
@@ -127,7 +166,8 @@ output from this repository on 2026-08-24.
 | scalar color ramp, 1m vertices | 5.04 ms | 56.16 ms | 11.13x | Mojo faster |
 | midpoint subdivision, 64k triangles | 24.93 ms | 213.18 ms | 8.55x | Mojo faster |
 
-No GPU path is included. The geometric face pass performs fewer than two
-floating-point operations per byte of indexed face and vertex data, while the
-edge hash pass has still lower arithmetic intensity. Host-device transfer and
-launch overhead therefore cannot be justified for these kernels.
+No GPU path is included, and none is justified: see "GPU status" above. The
+geometric face pass performs fewer than two floating-point operations per byte
+of indexed face and vertex data, while the edge hash pass has still lower
+arithmetic intensity. Host-device transfer and launch overhead therefore cannot
+be justified for these kernels.
