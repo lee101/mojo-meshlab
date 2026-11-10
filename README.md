@@ -156,15 +156,26 @@ src/meshlab.mojo -> dist/libmojo-meshlab.so -> ctypes -> mojomeshlab
 
 Run benchmarks only through `pixi run bench`; the task takes a machine-wide
 file lock. These are best-of-three or best-of-five wall times measured on an
-Intel Xeon E5-2697 v4 at 2.30 GHz, Linux 6.8.0-136-generic. They are the actual
-output from this repository on 2026-08-24.
+Intel Xeon E5-2697 v4 at 2.30 GHz, Linux 6.8.0-147-generic, on 2026-11-10, under
+a shared-host load average of 27-37 on 72 cores. They are the actual output from
+this repository on that date.
 
 | case | mojo-meshlab | pymeshlab | pymeshlab / Mojo | result |
 |---|---:|---:|---:|---|
-| face aspect ratio, 403k triangles | 8.86 ms | 18.34 ms | 2.07x | Mojo faster |
-| geometric measures, 403k triangles | 102.22 ms | 725.05 ms | 7.09x | Mojo faster |
-| scalar color ramp, 1m vertices | 5.04 ms | 56.16 ms | 11.13x | Mojo faster |
-| midpoint subdivision, 64k triangles | 24.93 ms | 213.18 ms | 8.55x | Mojo faster |
+| face aspect ratio, 403k triangles | 8.25 ms | 14.85 ms | 1.80x | Mojo faster |
+| geometric measures, 403k triangles | 51.30 ms | 670.81 ms | 13.08x | Mojo faster |
+| scalar color ramp, 1m vertices | 4.81 ms | 54.64 ms | 11.36x | Mojo faster |
+| midpoint subdivision, 64k triangles | 16.26 ms | 195.15 ms | 12.00x | Mojo faster |
+
+The Mojo column is the minimum over 8 independent sessions and the pymeshlab
+column is the matching pymeshlab column from the same sessions; `pixi run bench`
+itself reports a single session and is noisier. Every row is same-input,
+same-work: each side consumes the identical vertex/face arrays, and each filter's
+Python wrapper calls the kernel directly (the only per-call Python work is one
+boolean-mask accept, as in pymeshlab). Verified outputs match: aspect-ratio scalars
+within 2.1e-15, surface area and edge lengths within 5e-8 relative, the color ramp
+within exactly one 8-bit level, and midpoint subdivision vertex-for-vertex.
+`bench/verify.md` records the reproduction and the causes of the run-to-run spread.
 
 No GPU path is included, and none is justified: see "GPU status" above. The
 geometric face pass performs fewer than two floating-point operations per byte
