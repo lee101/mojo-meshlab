@@ -12,12 +12,14 @@ libc = "2.39"
 build = "bash build/build.sh"
 test = "python -m pytest tests -q"
 bench = "flock /tmp/mojo-bench.lock python bench/bench.py"
+bench-par = "flock /tmp/mojo-bench.lock python bench/parallel.py"
 
 [activation.env]
 PYTHONPATH = "python"
 
 [dependencies]
 mojo = "==1.2.0.dev2026092605"
+max = "==26.7.0.dev2026092605"
 python = "3.12.*"
 pytest = "*"
 numpy = "*"
