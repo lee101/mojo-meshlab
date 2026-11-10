@@ -39,6 +39,104 @@ def edge_length(v: F64Ptr, a: Int, b: Int) -> Float64:
 
 # vcglib: vcg/complex/algorithms/stat.h Stat::ComputeMeshArea,
 # ComputeShellBarycenter; vcg/complex/algorithms/inertia.h Inertia::Compute
+# Four partial accumulators per output: a single running sum serialises on the
+# latency of every dependent floating-point add. This changes the summation
+# order, so results can differ from the one-accumulator version in the last bits.
+comptime GEOMETRIC_UNROLL = 4
+
+
+@always_inline
+def geometric_sum0(
+    v: F64Ptr,
+    f: I64Ptr,
+    face: Int,
+    mut area_sum: Float64,
+    mut shell_x: Float64,
+    mut shell_y: Float64,
+    mut shell_z: Float64,
+    mut volume6: Float64,
+):
+    var a = Int(f[3 * face])
+    var b = Int(f[3 * face + 1])
+    var c = Int(f[3 * face + 2])
+    var ax = v[3 * a]
+    var ay = v[3 * a + 1]
+    var az = v[3 * a + 2]
+    var bx = v[3 * b]
+    var by = v[3 * b + 1]
+    var bz = v[3 * b + 2]
+    var cx = v[3 * c]
+    var cy = v[3 * c + 1]
+    var cz = v[3 * c + 2]
+    var ux = bx - ax
+    var uy = by - ay
+    var uz = bz - az
+    var wx = cx - ax
+    var wy = cy - ay
+    var wz = cz - az
+    var nx = uy * wz - uz * wy
+    var ny = uz * wx - ux * wz
+    var nz = ux * wy - uy * wx
+    var area = 0.5 * sqrt(nx * nx + ny * ny + nz * nz)
+    area_sum += area
+    shell_x += area * (ax + bx + cx) * (1.0 / 3.0)
+    shell_y += area * (ay + by + cy) * (1.0 / 3.0)
+    shell_z += area * (az + bz + cz) * (1.0 / 3.0)
+    volume6 += (
+        ax * (by * cz - bz * cy)
+        + ay * (bz * cx - bx * cz)
+        + az * (bx * cy - by * cx)
+    )
+
+
+
+
+@always_inline
+def geometric_sum1(
+    v: F64Ptr,
+    f: I64Ptr,
+    face: Int,
+    mut area_sum: Float64,
+    mut shell_x: Float64,
+    mut shell_y: Float64,
+    mut shell_z: Float64,
+    mut volume6: Float64,
+):
+    var a = Int(f[3 * face])
+    var b = Int(f[3 * face + 1])
+    var c = Int(f[3 * face + 2])
+    var ax = v[3 * a]
+    var ay = v[3 * a + 1]
+    var az = v[3 * a + 2]
+    var bx = v[3 * b]
+    var by = v[3 * b + 1]
+    var bz = v[3 * b + 2]
+    var cx = v[3 * c]
+    var cy = v[3 * c + 1]
+    var cz = v[3 * c + 2]
+    var ux = bx - ax
+    var uy = by - ay
+    var uz = bz - az
+    var wx = cx - ax
+    var wy = cy - ay
+    var wz = cz - az
+    var nx = uy * wz - uz * wy
+    var ny = uz * wx - ux * wz
+    var nz = ux * wy - uy * wx
+    var area = 0.5 * sqrt(nx * nx + ny * ny + nz * nz)
+    area_sum += area
+    shell_x += area * (ax + bx + cx) * (1.0 / 3.0)
+    shell_y += area * (ay + by + cy) * (1.0 / 3.0)
+    shell_z += area * (az + bz + cz) * (1.0 / 3.0)
+    volume6 += (
+        ax * (by * cz - bz * cy)
+        + ay * (bz * cx - bx * cz)
+        + az * (bx * cy - by * cx)
+    )
+
+
+
+
 @always_inline
 def geometric_face_range(
     v: F64Ptr,
@@ -48,11 +146,43 @@ def geometric_face_range(
     sums: F64Ptr,
 ):
     var area_sum: Float64 = 0.0
+    var area_sum_1: Float64 = 0.0
+    var area_sum_2: Float64 = 0.0
+    var area_sum_3: Float64 = 0.0
     var shell_x: Float64 = 0.0
+    var shell_x_1: Float64 = 0.0
+    var shell_x_2: Float64 = 0.0
+    var shell_x_3: Float64 = 0.0
     var shell_y: Float64 = 0.0
+    var shell_y_1: Float64 = 0.0
+    var shell_y_2: Float64 = 0.0
+    var shell_y_3: Float64 = 0.0
     var shell_z: Float64 = 0.0
+    var shell_z_1: Float64 = 0.0
+    var shell_z_2: Float64 = 0.0
+    var shell_z_3: Float64 = 0.0
     var volume6: Float64 = 0.0
-    for face in range(begin, end):
+    var volume6_1: Float64 = 0.0
+    var volume6_2: Float64 = 0.0
+    var volume6_3: Float64 = 0.0
+    var face = begin
+    while face + GEOMETRIC_UNROLL <= end:
+        comptime for lane in range(GEOMETRIC_UNROLL):
+            if lane == 0:
+                geometric_sum0(v, f, face, area_sum, shell_x, shell_y, shell_z, volume6)
+            elif lane == 1:
+                geometric_sum1(v, f, face + 1, area_sum_1, shell_x_1, shell_y_1, shell_z_1, volume6_1)
+            elif lane == 2:
+                geometric_sum1(v, f, face + 2, area_sum_2, shell_x_2, shell_y_2, shell_z_2, volume6_2)
+            else:
+                geometric_sum1(v, f, face + 3, area_sum_3, shell_x_3, shell_y_3, shell_z_3, volume6_3)
+        face += GEOMETRIC_UNROLL
+    var area_total = area_sum + area_sum_1 + area_sum_2 + area_sum_3
+    var shell_x_total = shell_x + shell_x_1 + shell_x_2 + shell_x_3
+    var shell_y_total = shell_y + shell_y_1 + shell_y_2 + shell_y_3
+    var shell_z_total = shell_z + shell_z_1 + shell_z_2 + shell_z_3
+    var volume6_total = volume6 + volume6_1 + volume6_2 + volume6_3
+    while face < end:
         var a = Int(f[3 * face])
         var b = Int(f[3 * face + 1])
         var c = Int(f[3 * face + 2])
@@ -75,20 +205,21 @@ def geometric_face_range(
         var ny = uz * wx - ux * wz
         var nz = ux * wy - uy * wx
         var area = 0.5 * sqrt(nx * nx + ny * ny + nz * nz)
-        area_sum += area
-        shell_x += area * (ax + bx + cx) / 3.0
-        shell_y += area * (ay + by + cy) / 3.0
-        shell_z += area * (az + bz + cz) / 3.0
-        volume6 += (
+        area_total += area
+        shell_x_total += area * (ax + bx + cx) / 3.0
+        shell_y_total += area * (ay + by + cy) / 3.0
+        shell_z_total += area * (az + bz + cz) / 3.0
+        volume6_total += (
             ax * (by * cz - bz * cy)
             + ay * (bz * cx - bx * cz)
             + az * (bx * cy - by * cx)
         )
-    sums[0] = area_sum
-    sums[1] = shell_x
-    sums[2] = shell_y
-    sums[3] = shell_z
-    sums[4] = volume6
+        face += 1
+    sums[0] = area_total
+    sums[1] = shell_x_total
+    sums[2] = shell_y_total
+    sums[3] = shell_z_total
+    sums[4] = volume6_total
 
 
 @export("mml_geometric_measures")
@@ -129,11 +260,17 @@ def geometric_measures(
         r[7] = sum_x.reduce_add()
         r[8] = sum_y.reduce_add()
         r[9] = sum_z.reduce_add()
+        var tail_x: Float64 = 0.0
+        var tail_y: Float64 = 0.0
+        var tail_z: Float64 = 0.0
         while i < vertex_count:
-            r[7] += v[3 * i]
-            r[8] += v[3 * i + 1]
-            r[9] += v[3 * i + 2]
+            tail_x += v[3 * i]
+            tail_y += v[3 * i + 1]
+            tail_z += v[3 * i + 2]
             i += 1
+        r[7] += tail_x
+        r[8] += tail_y
+        r[9] += tail_z
         r[7] /= Float64(vertex_count)
         r[8] /= Float64(vertex_count)
         r[9] /= Float64(vertex_count)
@@ -181,8 +318,12 @@ def geometric_measures(
         keys[slot_index] = -1
         slot_index += 1
 
+    # Two accumulators for the two length sums: one would serialise on the
+    # latency of each dependent add.
     var unique_sum: Float64 = 0.0
+    var unique_sum_2: Float64 = 0.0
     var faux_sum: Float64 = 0.0
+    var faux_sum_2: Float64 = 0.0
     var unique_count = 0
     var faux_count = 0
     var not_two_count = 0
@@ -204,11 +345,17 @@ def geometric_measures(
                 keys[slot] = key
                 states[slot] = UInt8(5 if is_faux else 1)
                 var length = edge_length(v, lo, hi)
-                unique_sum += length
+                if unique_count & 1 == 0:
+                    unique_sum += length
+                else:
+                    unique_sum_2 += length
                 unique_count += 1
                 not_two_count += 1
                 if is_faux:
-                    faux_sum += length
+                    if faux_count & 1 == 0:
+                        faux_sum += length
+                    else:
+                        faux_sum_2 += length
                     faux_count += 1
             else:
                 var state = Int(states[slot])
@@ -220,13 +367,16 @@ def geometric_measures(
                     count = 3
                     not_two_count += 1
                 if is_faux and state & 4 == 0:
-                    faux_sum += edge_length(v, lo, hi)
+                    if faux_count & 1 == 0:
+                        faux_sum += edge_length(v, lo, hi)
+                    else:
+                        faux_sum_2 += edge_length(v, lo, hi)
                     faux_count += 1
                     state |= 4
                 states[slot] = UInt8(count | (state & 4))
-    r[1] = unique_sum
+    r[1] = unique_sum + unique_sum_2
     r[2] = Float64(unique_count)
-    r[10] = faux_sum
+    r[10] = faux_sum + faux_sum_2
     r[11] = Float64(faux_count)
     r[12] = 1.0 if not_two_count == 0 and face_count > 0 else 0.0
 
